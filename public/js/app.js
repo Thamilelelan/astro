@@ -135,9 +135,16 @@ function showScreen(screenId) {
 
 function updateProgressBar() {
     const progress = ((state.currentQuestion + 1) / state.questions.length) * 100;
-    document.getElementById('progressFill').style.width = `${progress}%`;
-    document.getElementById('progressText').textContent =
-        `Question ${state.currentQuestion + 1} of ${state.questions.length}`;
+    const progressFill = document.getElementById('progressFill');
+    if (progressFill) {
+        progressFill.style.width = `${progress}%`;
+    }
+
+    // Optional: Update text if element exists
+    const progressText = document.getElementById('progressText');
+    if (progressText) {
+        progressText.textContent = `Question ${state.currentQuestion + 1} of ${state.questions.length}`;
+    }
 }
 
 function getTranslation(key) {
@@ -147,8 +154,19 @@ function getTranslation(key) {
 function displayQuestion() {
     const question = state.questions[state.currentQuestion];
 
-    // Add question to chat
-    addChatMessage('bot', question.question);
+    // UPDATED: Update the visualizer text instead of chat
+    const questionDisplay = document.getElementById('currentQuestionText');
+    if (questionDisplay) {
+        // Simple fade effect
+        questionDisplay.style.opacity = '0';
+        setTimeout(() => {
+            questionDisplay.textContent = question.question;
+            questionDisplay.style.opacity = '1';
+        }, 200);
+    } else {
+        // Fallback if element missing
+        addChatMessage('bot', question.question);
+    }
 
     // Update options
     const optionsContainer = document.getElementById('optionsContainer');
@@ -245,8 +263,8 @@ function selectOption(index, text, eventTarget = null) {
         }
     }
 
-    // Add user's answer to chat
-    addChatMessage('user', text);
+    // UPDATED: No longer adding user chat message
+    // addChatMessage('user', text);
 
     // Save answer
     const question = state.questions[state.currentQuestion];
@@ -291,9 +309,15 @@ async function speakQuestion() {
         const audioPlayer = document.getElementById('audioPlayer');
         audioPlayer.src = `data:audio/mp3;base64,${audioData}`;
 
+        // Add visualizer animation
+        const sphere = document.querySelector('.ai-sphere');
+        if (sphere) sphere.classList.add('speaking');
+
         // Set up event listener for when audio ends
         audioPlayer.onended = () => {
             state.isPlayingAudio = false;
+            if (sphere) sphere.classList.remove('speaking');
+
             if (state.autoMicEnabled) {
                 setTimeout(() => startVoiceInput(), 500);
             }
@@ -307,7 +331,8 @@ async function speakQuestion() {
 
 async function startVoiceInput() {
     const voiceBtn = document.getElementById('voiceInput');
-    const voiceStatus = document.getElementById('voiceStatus');
+    // In the new UI, status is shown in the AI sphere status area
+    const voiceStatus = document.getElementById('aiStatus') || document.getElementById('voiceStatus');
 
     if (!state.isRecording) {
         // Start recording with Web Audio API for WAV format
@@ -323,17 +348,29 @@ async function startVoiceInput() {
             await state.audioProcessor.startRecording();
 
             state.isRecording = true;
+
+            // Add visualizer animation
+            const sphere = document.querySelector('.ai-sphere');
+            if (sphere) sphere.classList.add('listening');
+
             if (state.autoMicEnabled && !voiceBtn.classList.contains('recording')) {
                 voiceBtn.classList.add('auto-listening');
             } else {
                 voiceBtn.classList.add('recording');
             }
-            voiceBtn.querySelector('.voice-text').textContent = 'Listening...';
-            voiceStatus.textContent = getTranslation('listening');
+
+            // Update UI safely
+            const voiceText = voiceBtn.querySelector('.voice-text');
+            if (voiceText) voiceText.textContent = 'Listening...';
+
+            if (voiceStatus) {
+                voiceStatus.textContent = getTranslation('listening');
+                voiceStatus.style.opacity = '1';
+            }
 
         } catch (error) {
             console.error('Microphone access error:', error);
-            voiceStatus.textContent = 'Microphone access denied. Please enable it.';
+            if (voiceStatus) voiceStatus.textContent = 'Microphone access denied. Please enable it.';
         }
     } else {
         // Manual stop
@@ -343,7 +380,7 @@ async function startVoiceInput() {
 
 function stopVoiceInput() {
     const voiceBtn = document.getElementById('voiceInput');
-    const voiceStatus = document.getElementById('voiceStatus');
+    const voiceStatus = document.getElementById('aiStatus') || document.getElementById('voiceStatus');
 
     if (!state.isRecording || !state.audioProcessor) return;
 
@@ -353,7 +390,7 @@ function stopVoiceInput() {
         const audioBlob = state.audioProcessor.stopRecording();
         const reader = new FileReader();
 
-        voiceStatus.textContent = getTranslation('processing');
+        if (voiceStatus) voiceStatus.textContent = getTranslation('processing');
 
         reader.onloadend = async () => {
             const base64Audio = reader.result.split(',')[1];
@@ -373,24 +410,30 @@ function stopVoiceInput() {
                     const question = state.questions[state.currentQuestion];
                     const matchedIndex = findBestMatch(data.text, question.options);
                     selectOption(matchedIndex, question.options[matchedIndex]);
-                    voiceStatus.innerHTML = `<i class="fa-solid fa-check"></i> ${data.text}`;
 
-                    // Clear status after a delay
-                    setTimeout(() => {
-                        voiceStatus.textContent = '';
-                    }, 2000);
+                    if (voiceStatus) {
+                        voiceStatus.innerHTML = `<i class="fa-solid fa-check"></i> ${data.text}`;
+                        // Clear status after a delay
+                        setTimeout(() => {
+                            voiceStatus.textContent = '';
+                        }, 2000);
+                    }
                 } else {
-                    voiceStatus.textContent = 'Speech not recognized. Try again.';
+                    if (voiceStatus) {
+                        voiceStatus.textContent = 'Speech not recognized. Try again.';
+                        setTimeout(() => {
+                            voiceStatus.textContent = '';
+                        }, 3000);
+                    }
+                }
+            } catch (error) {
+                console.error('STT Error:', error);
+                if (voiceStatus) {
+                    voiceStatus.textContent = 'Error processing voice.';
                     setTimeout(() => {
                         voiceStatus.textContent = '';
                     }, 3000);
                 }
-            } catch (error) {
-                console.error('STT Error:', error);
-                voiceStatus.textContent = 'Error processing voice.';
-                setTimeout(() => {
-                    voiceStatus.textContent = '';
-                }, 3000);
             }
         };
 
@@ -398,15 +441,24 @@ function stopVoiceInput() {
 
     } catch (error) {
         console.error('Recording error:', error);
-        voiceStatus.textContent = 'Recording failed.';
-        setTimeout(() => {
-            voiceStatus.textContent = '';
-        }, 3000);
+        if (voiceStatus) {
+            voiceStatus.textContent = 'Recording failed.';
+            setTimeout(() => {
+                voiceStatus.textContent = '';
+            }, 3000);
+        }
     }
 
     state.isRecording = false;
+
+    // Remove visualizer animation
+    const sphere = document.querySelector('.ai-sphere');
+    if (sphere) sphere.classList.remove('listening');
+
     voiceBtn.classList.remove('recording', 'auto-listening');
-    voiceBtn.querySelector('.voice-text').textContent = 'Tap to Speak';
+
+    const voiceText = voiceBtn.querySelector('.voice-text');
+    if (voiceText) voiceText.textContent = 'Tap to Speak';
 }
 
 function toggleAutoMic() {
@@ -571,9 +623,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Retake assessment
     document.getElementById('retakeAssessment').addEventListener('click', retakeAssessment);
-
-    // Share results (placeholder)
-    document.getElementById('shareResults').addEventListener('click', () => {
-        alert('Share functionality coming soon!');
-    });
 });

@@ -46,19 +46,18 @@
         </div>
     </div>
 
-    <!-- Question Screen (Chat Style) -->
+    <!-- Question Screen (Visualizer Style) -->
     <div id="questionScreen" class="screen">
-        <div class="container">
-            <div class="chat-header">
+        <div class="container visualizer-layout">
+            <div class="visualizer-header">
                 <div class="progress-info">
                     <div class="progress-bar">
                         <div class="progress-fill" id="progressFill"></div>
                     </div>
-                    <span class="progress-text" id="progressText">Question 1 of 10</span>
                 </div>
                 <div class="controls">
                     <button id="toggleAutoMic" class="toggle-btn active" title="Auto-mic enabled">
-                        <i class="fa-solid fa-microphone-lines"></i> Auto
+                        <i class="fa-solid fa-microphone-lines"></i>
                     </button>
                     <button id="changeLanguageFromChat" class="icon-btn" title="Change language">
                         <i class="fa-solid fa-globe"></i>
@@ -66,23 +65,35 @@
                 </div>
             </div>
 
-            <div class="chat-container" id="chatContainer">
-                <!-- Chat messages will be dynamically inserted here -->
+            <!-- Magical AI Sphere -->
+            <div class="sphere-container">
+                <div id="aiSphere" class="ai-sphere">
+                    <div class="sphere-core"></div>
+                    <div class="sphere-glow"></div>
+                </div>
+                <div id="aiStatus" class="ai-status-text">Listening...</div>
             </div>
 
-            <div class="chat-input-area">
-                <div class="options-container" id="optionsContainer">
+            <!-- Question Display -->
+            <div class="question-display-area">
+                <h2 id="currentQuestionText" class="current-question-text"></h2>
+            </div>
+
+            <!-- Interaction Area -->
+            <div class="interaction-area">
+                <div class="options-grid" id="optionsContainer">
                     <!-- Options will be dynamically inserted here -->
                 </div>
 
-                <div class="voice-controls">
-                    <button id="voiceInput" class="btn-voice-toggle" title="Hold to speak">
-                        <span class="mic-icon"><i class="fa-solid fa-microphone"></i></span>
-                        <span class="voice-text">Tap to Speak</span>
+                <div class="voice-controls-minimal">
+                    <button id="voiceInput" class="voice-fab" title="Tap to Speak">
+                        <i class="fa-solid fa-microphone"></i>
                     </button>
-                    <p class="voice-status" id="voiceStatus"></p>
                 </div>
             </div>
+
+            <!-- Hidden container to prevent JS errors if looking for chatContainer -->
+            <div id="chatContainer" style="display: none;"></div>
         </div>
     </div>
 
@@ -110,7 +121,6 @@
 
             <div class="button-group">
                 <button id="retakeAssessment" class="btn btn-primary">Retake Assessment</button>
-                <button id="shareResults" class="btn btn-secondary">Share Results</button>
             </div>
         </div>
     </div>
