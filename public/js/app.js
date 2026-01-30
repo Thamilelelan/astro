@@ -8,7 +8,7 @@ const state = {
     audioProcessor: null,
     mediaRecorder: null,
     audioChunks: [],
-    autoMicEnabled: true,
+    autoMicEnabled: localStorage.getItem('autoMicEnabled') !== 'false', // Load from localStorage, default true
     isPlayingAudio: false,
     pendingAutoListen: false
 };
@@ -39,7 +39,9 @@ const translations = {
         processing: "Processing your response...",
         primary: "<i class='fa-solid fa-trophy'></i> Best Match",
         secondary: "<i class='fa-solid fa-medal'></i> Second Choice",
-        tertiary: "<i class='fa-solid fa-award'></i> Third Choice"
+        tertiary: "<i class='fa-solid fa-award'></i> Third Choice",
+        option: "Option",
+        resultSummary: "Based on your assessment, you are fit for"
     },
     hi: {
         welcomeTitle: "स्वागत है!",
@@ -65,7 +67,9 @@ const translations = {
         processing: "आपकी प्रतिक्रिया संसाधित कर रहे हैं...",
         primary: "<i class='fa-solid fa-trophy'></i> सर्वश्रेष्ठ मिलान",
         secondary: "<i class='fa-solid fa-medal'></i> दूसरी पसंद",
-        tertiary: "<i class='fa-solid fa-award'></i> तीसरी पसंद"
+        tertiary: "<i class='fa-solid fa-award'></i> तीसरी पसंद",
+        option: "विकल्प",
+        resultSummary: "आपके मूल्यांकन के आधार पर, आप इसके लिए उपयुक्त हैं"
     }
     // Add more languages as needed
 };
@@ -112,7 +116,7 @@ async function textToSpeech(text, language, cacheKey = null) {
         });
         const data = await response.json();
         if (data.success) {
-            return data.audioData;
+            return data.audioData.audio; // Extract audio from the audioData object
         }
         throw new Error('TTS failed');
     } catch (error) {
@@ -216,6 +220,15 @@ function addChatMessage(sender, text, isTyping = false) {
 }
 
 function selectOption(index, text, eventTarget = null) {
+    // Stop any playing audio immediately and remove event handlers
+    const audioPlayer = document.getElementById('audioPlayer');
+    if (audioPlayer) {
+        audioPlayer.pause();
+        audioPlayer.currentTime = 0;
+        audioPlayer.onended = null; // Remove event handler to prevent auto-mic trigger
+    }
+    state.isPlayingAudio = false;
+
     // Update UI
     document.querySelectorAll('.option-btn').forEach(btn => {
         btn.classList.remove('selected');
@@ -258,51 +271,38 @@ function selectOption(index, text, eventTarget = null) {
 async function speakQuestion() {
     const question = state.questions[state.currentQuestion];
     const questionId = question.id;
-    const cacheKey = `question-${questionId}`;
 
-    // Try to use cached audio file first
-    const cachedAudioPath = `/audio/${state.currentLanguage}/${cacheKey}.mp3`;
+    // Build combined text with question and all options
+    const optionWord = getTranslation('option');
+    let questionText = question.question + ". ";
+    question.options.forEach((option, index) => {
+        questionText += `${optionWord} ${index + 1}: ${option}. `;
+    });
+
+    const cacheKey = `question-${questionId}-with-options`;
 
     state.isPlayingAudio = true;
 
-    // Check if cached file exists
-    try {
-        const response = await fetch(cachedAudioPath, { method: 'HEAD' });
-        if (response.ok) {
-            // Use cached audio
-            console.log('Using cached audio file');
-            const audioPlayer = document.getElementById('audioPlayer');
-            audioPlayer.src = cachedAudioPath;
+    // For the new format with options, always generate via API
+    // (since cached files only have question without options)
+    const audioData = await textToSpeech(questionText, state.currentLanguage, cacheKey);
 
-            // Set up event listener for when audio ends
-            audioPlayer.onended = () => {
-                state.isPlayingAudio = false;
-                if (state.autoMicEnabled) {
-                    setTimeout(() => startVoiceInput(), 500);
-                }
-            };
+    if (audioData) {
+        const audioPlayer = document.getElementById('audioPlayer');
+        audioPlayer.src = `data:audio/mp3;base64,${audioData}`;
 
-            audioPlayer.play();
-            return;
-        }
-    } catch (error) {
-        console.log('Cached audio not found, generating...');
-    }
+        // Set up event listener for when audio ends
+        audioPlayer.onended = () => {
+            state.isPlayingAudio = false;
+            if (state.autoMicEnabled) {
+                setTimeout(() => startVoiceInput(), 500);
+            }
+        };
 
-    // Fallback to API if cache doesn't exist
-    const audioData = await textToSpeech(question.question, state.currentLanguage, cacheKey);
-    const audioPlayer = document.getElementById('audioPlayer');
-    audioPlayer.src = `data:audio/mp3;base64,${audioData}`;
-
-    // Set up event listener for when audio ends
-    audioPlayer.onended = () => {
+        audioPlayer.play();
+    } else {
         state.isPlayingAudio = false;
-        if (state.autoMicEnabled) {
-            setTimeout(() => startVoiceInput(), 500);
-        }
-    };
-
-    audioPlayer.play();
+    }
 }
 
 async function startVoiceInput() {
@@ -313,13 +313,13 @@ async function startVoiceInput() {
         // Start recording with Web Audio API for WAV format
         try {
             state.audioProcessor = new window.AudioProcessor();
-            
+
             // Set up silence detection callback for auto-stop
             state.audioProcessor.onSilenceDetected = () => {
                 console.log('Silence detected, auto-stopping...');
                 stopVoiceInput();
             };
-            
+
             await state.audioProcessor.startRecording();
 
             state.isRecording = true;
@@ -344,9 +344,9 @@ async function startVoiceInput() {
 function stopVoiceInput() {
     const voiceBtn = document.getElementById('voiceInput');
     const voiceStatus = document.getElementById('voiceStatus');
-    
+
     if (!state.isRecording || !state.audioProcessor) return;
-    
+
     // Stop recording and process
     try {
         state.audioProcessor.stopSilenceDetection();
@@ -411,7 +411,16 @@ function stopVoiceInput() {
 
 function toggleAutoMic() {
     state.autoMicEnabled = !state.autoMicEnabled;
+
+    // Save preference to localStorage
+    localStorage.setItem('autoMicEnabled', state.autoMicEnabled);
+
+    updateAutoMicUI();
+}
+
+function updateAutoMicUI() {
     const toggleBtn = document.getElementById('toggleAutoMic');
+    if (!toggleBtn) return;
 
     if (state.autoMicEnabled) {
         toggleBtn.classList.add('active');
@@ -451,6 +460,15 @@ function findBestMatch(text, options) {
 }
 
 async function analyzeResults() {
+    // Stop any playing audio
+    const audioPlayer = document.getElementById('audioPlayer');
+    if (audioPlayer) {
+        audioPlayer.pause();
+        audioPlayer.currentTime = 0;
+        audioPlayer.onended = null;
+    }
+    state.isPlayingAudio = false;
+
     showScreen('loadingScreen');
 
     const recommendation = await analyzeAnswers(state.answers, state.currentLanguage);
@@ -463,7 +481,7 @@ async function analyzeResults() {
     }
 }
 
-function displayResults(recommendation) {
+async function displayResults(recommendation) {
     const resultsContent = document.getElementById('resultsContent');
 
     const results = [
@@ -486,6 +504,17 @@ function displayResults(recommendation) {
     `).join('');
 
     showScreen('resultsScreen');
+
+    // Speak the result summary immediately with stream-specific cache key
+    const summaryText = `${getTranslation('resultSummary')} ${recommendation.primary.stream}`;
+    const cacheKey = `result-${recommendation.primary.stream.toLowerCase().replace(/\s+/g, '-')}`;
+    const audioData = await textToSpeech(summaryText, state.currentLanguage, cacheKey);
+
+    if (audioData) {
+        const audioPlayer = document.getElementById('audioPlayer');
+        audioPlayer.src = `data:audio/mp3;base64,${audioData}`;
+        audioPlayer.play();
+    }
 }
 
 function retakeAssessment() {
@@ -496,6 +525,9 @@ function retakeAssessment() {
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize auto-mic UI based on saved preference
+    updateAutoMicUI();
+
     // Language selection - directly start assessment
     document.querySelectorAll('.language-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -503,7 +535,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Fetch questions in selected language
             state.questions = await fetchQuestions(state.currentLanguage);
-            
+
             // Clear chat and answers
             state.currentQuestion = 0;
             state.answers = [];
@@ -511,7 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (chatContainer) {
                 chatContainer.innerHTML = '';
             }
-            
+
             // Go directly to questions
             showScreen('questionScreen');
             displayQuestion();
